@@ -3,6 +3,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <pthread.h>
 
 #include <string.h>
 #include <errno.h>
@@ -10,32 +11,120 @@
 #include <unistd.h>
 
 
+enum states
+{
+    ST_NON_MEMBER = 0,
+    ST_IDLE_MEMBER,
+    ST_DELAYING_MEMBER,
+    ST_LAST
+};
+
+enum messages
+{
+    MES_LEAVE_GROUP,
+    MES_JOIN_GROUP,
+    MES_QUERY_RECEIVED,
+    MES_REPORT_RECEIVED,
+    MES_TIMER_EXPIRED,
+    MES_LAST
+};
+
+enum states FSM_new_state[ST_LAST][MES_LAST] = {
+    [ST_NON_MEMBER][MES_JOIN_GROUP] = ST_DELAYING_MEMBER,
+    [ST_IDLE_MEMBER][MES_QUERY_RECEIVED] = ST_DELAYING_MEMBER,
+    [ST_IDLE_MEMBER][MES_LEAVE_GROUP] = ST_NON_MEMBER,
+    [ST_DELAYING_MEMBER][MES_LEAVE_GROUP] = ST_NON_MEMBER,
+    [ST_DELAYING_MEMBER][MES_QUERY_RECEIVED] = ST_DELAYING_MEMBER,
+    [ST_DELAYING_MEMBER][MES_REPORT_RECEIVED] = ST_IDLE_MEMBER,
+    [ST_DELAYING_MEMBER][MES_TIMER_EXPIRED] = ST_IDLE_MEMBER
+};
+
+void f1() {}
+void f2() {}
+void f3() {}
+void f4() {}
+void f5() {}
+void f6() {}
+void f7() {}
+
+void (*func[ST_LAST][MES_LAST])() = {
+    [ST_NON_MEMBER][MES_JOIN_GROUP] = f1,
+    [ST_IDLE_MEMBER][MES_QUERY_RECEIVED] = f2,
+    [ST_IDLE_MEMBER][MES_LEAVE_GROUP] = f3,
+    [ST_DELAYING_MEMBER][MES_LEAVE_GROUP] = f4,
+    [ST_DELAYING_MEMBER][MES_QUERY_RECEIVED] = f5,
+    [ST_DELAYING_MEMBER][MES_REPORT_RECEIVED] = f6,
+    [ST_DELAYING_MEMBER][MES_TIMER_EXPIRED] = f7
+};
+
+typedef struct {
+    uint32_t compl;
+    uint32_t gAddr;
+} IGMPPack;
+
+
+/*!
+ * \brief Функция для обмена по сети
+ */
+int exchange() {
+    //const char* mes = "Test message";
+    IGMPPack mes;
+    mes.compl = htonl(0x16000000);
+    char mcGroupAddr[16] = "224.0.0.88";
+    mes.gAddr = inet_addr(mcGroupAddr);
+    int exchangeErr = 0;
+
+    // Локальный интерфейс
+    struct sockaddr_in localFace;
+    //memset(&localFace, 0, sizeof(localFace));
+    inet_aton("192.168.88.72", &localFace.sin_addr);
+    //inet_aton("127.0.0.1", &localFace.sin_addr);
+    //localFace.sin_addr.s_addr = htonl(INADDR_ANY);
+    localFace.sin_port = htons(3000);
+    localFace.sin_family = AF_INET;
+
+    int mainSock = socket(AF_INET, SOCK_RAW, IPPROTO_IGMP);
+    exchangeErr = mainSock;
+    if (exchangeErr > 0)
+        printf("Socket #%d opened\n", mainSock);
+    else
+        printf("Socket opening ERROR code #%d\n", mainSock);
+
+    // Удалённый хост
+    struct sockaddr_in destHost;
+    //memset(&destHost, 0, sizeof(destHost));
+    destHost.sin_family = AF_INET;
+    destHost.sin_port = htons(3000);
+    inet_aton("192.168.88.1", &destHost.sin_addr);
+    //inet_aton("127.0.0.1", &destHost.sin_addr);
+    //inet_aton("224.0.0.88", &destHost.sin_addr);
+
+    if (exchangeErr >= 0)
+        exchangeErr = bind(mainSock, (struct sockaddr*) &localFace, sizeof(localFace));
+    if (exchangeErr >= 0)
+        exchangeErr = sendto(mainSock, (void*)&mes, sizeof(mes), 0, (struct sockaddr*) &destHost, sizeof(destHost));
+
+
+
+
+
+    close(mainSock);
+    return exchangeErr;
+}
+
 
 int main(int argc,char *argv[])
 {
     printf("Multicast checking\n");
-    const char* mes = "Test message";
 
-    int exchangeNoErr = 1;
-
-    // Локальный интерфейс
-    int mainSock = socket(AF_INET, SOCK_DGRAM, 0);
-    struct sockaddr_in localFace;
-    inet_aton("192.168.88.72", &localFace.sin_addr);
-    localFace.sin_port = htons(3000);
-    localFace.sin_family = AF_INET;
-
-    // Удалённый хост
-    struct sockaddr_in destHost;
-    destHost.sin_family = AF_INET;
-    destHost.sin_port = htons(3000);
-    inet_aton("192.168.88.1", &destHost.sin_addr);
-
-    bind(mainSock, (struct sockaddr*) &localFace, sizeof(localFace));
-    sendto(mainSock, mes, sizeof(mes), 0, (struct sockaddr*) &destHost, sizeof(destHost));
+    //exchange();
+    pthread_t thDesc;
+    if (pthread_create(&thDesc, NULL, (void*)&exchange, NULL) == 0) {
+        printf("Exchange started\n");
+    }
 
 
-    close(mainSock);
+    pthread_join(thDesc, NULL);
     return 0;
 }
 
