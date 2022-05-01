@@ -1,25 +1,43 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/ip.h>
 #include <arpa/inet.h>
 #include <pthread.h>
-
 #include <string.h>
-#include <errno.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <errno.h>
+
+#define ALL_SYSTEMS "224.0.0.1"
+#define ALL_ROUTERS "224.0.0.2"
 
 // Пакет IGMP
 ;
 #pragma pack (push, 1)
 typedef struct {
-    uint8_t compl;
+    uint8_t type;
     uint8_t maxTime;
     uint16_t checksum;
     uint32_t gAddr;
 } IGMPPack;
 #pragma pack (pop)
+
+
+typedef struct {
+
+} StatusFlags;
+
+
+typedef struct {
+    pthread_t thDesc;
+    char mcGroupAddr[16];
+    char ifaceIP[16];
+} ExchangeParameters;
+
+
 
 // Состояния
 enum states
@@ -30,9 +48,10 @@ enum states
     ST_LAST
 };
 
-// Воздействия
+// События
 enum messages
 {
+    MES_NONE = 0,
     MES_LEAVE_GROUP,
     MES_JOIN_GROUP,
     MES_QUERY_RECEIVED,
@@ -41,18 +60,21 @@ enum messages
     MES_LAST
 };
 
-//// Таблица переходов (смены состояний)
-//enum states FSM_new_state[ST_LAST][MES_LAST] = {
-//    [ST_NON_MEMBER][MES_JOIN_GROUP] = ST_DELAYING_MEMBER,
-//    [ST_IDLE_MEMBER][MES_QUERY_RECEIVED] = ST_DELAYING_MEMBER,
-//    [ST_IDLE_MEMBER][MES_LEAVE_GROUP] = ST_NON_MEMBER,
-//    [ST_DELAYING_MEMBER][MES_LEAVE_GROUP] = ST_NON_MEMBER,
-//    [ST_DELAYING_MEMBER][MES_QUERY_RECEIVED] = ST_DELAYING_MEMBER,
-//    [ST_DELAYING_MEMBER][MES_REPORT_RECEIVED] = ST_IDLE_MEMBER,
-//    [ST_DELAYING_MEMBER][MES_TIMER_EXPIRED] = ST_IDLE_MEMBER
-//};
+// Таблица переходов (смены состояний)
+enum states FSM_new_state[ST_LAST][MES_LAST] = {
+    [ST_NON_MEMBER][MES_JOIN_GROUP] = ST_DELAYING_MEMBER,
+    [ST_IDLE_MEMBER][MES_QUERY_RECEIVED] = ST_DELAYING_MEMBER,
+    [ST_IDLE_MEMBER][MES_LEAVE_GROUP] = ST_NON_MEMBER,
+    [ST_DELAYING_MEMBER][MES_LEAVE_GROUP] = ST_NON_MEMBER,
+    [ST_DELAYING_MEMBER][MES_QUERY_RECEIVED] = ST_DELAYING_MEMBER,
+    [ST_DELAYING_MEMBER][MES_REPORT_RECEIVED] = ST_IDLE_MEMBER,
+    [ST_DELAYING_MEMBER][MES_TIMER_EXPIRED] = ST_IDLE_MEMBER,
+    [ST_NON_MEMBER][MES_NONE] = ST_NON_MEMBER,
+    [ST_IDLE_MEMBER][MES_NONE] = ST_IDLE_MEMBER,
+    [ST_DELAYING_MEMBER][MES_NONE] = ST_DELAYING_MEMBER
+};
 
-int g_workMode = 1; // Состояние работы программы: 1-работать, 0-завершить
+volatile int g_workMode = 1; // Состояние работы программы: 1-работать, 0-завершить
 
 // Передача пакета на заданный адрес
 int igmpSend(int sock, int err, char* ipAddr, IGMPPack* mes) {
@@ -65,14 +87,15 @@ int igmpSend(int sock, int err, char* ipAddr, IGMPPack* mes) {
     return sendto(sock, (void*)mes, sizeof(mes), 0, (struct sockaddr*) &destHost, sizeof(destHost));
 }
 
-
+// Отправка пакета membershipReport
 int membershipReport(int sock, int exchangeErr, char* mcGroupAddr) {
     IGMPPack mes;
-    mes.compl = 0x16;
+    mes.type = 0x16;
     mes.maxTime = 0;
     mes.checksum = 0;
     mes.gAddr = inet_addr(mcGroupAddr);
-    return igmpSend(sock, exchangeErr, "127.0.0.1", &mes);
+    return igmpSend(sock, exchangeErr, ALL_SYSTEMS, &mes);
+    //return igmpSend(sock, exchangeErr, "192.168.88.1", &mes);
 }
 
 
@@ -80,78 +103,103 @@ int membershipReport(int sock, int exchangeErr, char* mcGroupAddr) {
 //событие может происходить только в состоянии Non-Member.
 int joinGroup(int sock, int exchangeErr, char* mcGroupAddr) {
     IGMPPack mes;
-    mes.compl = 0x11;
+    mes.type = 0x11;
     mes.maxTime = 0;
     mes.checksum = 0;
     mes.gAddr = inet_addr(mcGroupAddr);
-    return igmpSend(sock, exchangeErr, "127.0.0.1", &mes);
+    int err = igmpSend(sock, exchangeErr, ALL_SYSTEMS, &mes);
+    //int err = igmpSend(sock, exchangeErr, "192.168.88.1", &mes);
+
+//    //    Когда хост присоединяется к группе, ему следует незамедлительно передать сообщение Version 2 Membership Report
+//    //    для этой группы, если данный хост является первым членом этой группы в своей сети. Учитывая возможность потери
+//    //    или повреждения начального сообщения Membership Report рекомендуется передать 1 или 2 дополнительных копии
+//    //    этого сообщения с короткой задержкой [Unsolicited Report Interval].
+//    if (exchangeErr >= 0) {
+//        for (int i = 0; i < 3; i++) {
+//            err = membershipReport(sock, exchangeErr, mcGroupAddr);
+//            if (i < 2) sleep(1);
+//        }
+//    }
+
+    return err;
 }
 
 //Выход из группы (leave group), когда хост решил покинуть группу на данном интерфейсе. Это событие может
 //происходить только в состоянии Delaying Member или Idle Member.
 int leaveGroup(int sock, int exchangeErr, char* mcGroupAddr) {
     IGMPPack mes;
-    mes.compl = 0x17;
+    mes.type = 0x17;
     mes.maxTime = 0;
     mes.checksum = 0;
     mes.gAddr = inet_addr(mcGroupAddr);
-    return igmpSend(sock, exchangeErr, "224.0.0.2", &mes);
+    return igmpSend(sock, exchangeErr, ALL_ROUTERS, &mes);
 }
 
 
 // Функции перехода
-enum states f1(int sock, int exchangeErr, char* mcGroupAddr) {
+void f0(int sock, int exchangeErr, char* mcGroupAddr) {
+    printf("f0\n");
+}
+void f1(int sock, int exchangeErr, char* mcGroupAddr) {
+    printf("f1\n");
     joinGroup(sock, exchangeErr, mcGroupAddr);
-    return ST_DELAYING_MEMBER;
+    //return ST_DELAYING_MEMBER;
 }
-enum states f2(int sock, int exchangeErr, char* mcGroupAddr) {
-    return ST_DELAYING_MEMBER;
+void f2(int sock, int exchangeErr, char* mcGroupAddr) {
+    printf("f2\n");
+    //return ST_DELAYING_MEMBER;
 }
-enum states f3(int sock, int exchangeErr, char* mcGroupAddr) {
-    return ST_NON_MEMBER;
+void f3(int sock, int exchangeErr, char* mcGroupAddr) {
+    printf("f3\n");
+    leaveGroup(sock, exchangeErr, mcGroupAddr);
+    //return ST_NON_MEMBER;
 }
-enum states f4(int sock, int exchangeErr, char* mcGroupAddr) {
-    return ST_NON_MEMBER;
+void f4(int sock, int exchangeErr, char* mcGroupAddr) {
+    printf("f4\n");
+    //return ST_NON_MEMBER;
 }
-enum states f5(int sock, int exchangeErr, char* mcGroupAddr) {
-    return ST_DELAYING_MEMBER;
+void f5(int sock, int exchangeErr, char* mcGroupAddr) {
+    printf("f5\n");
+    //return ST_DELAYING_MEMBER;
 }
-enum states f6(int sock, int exchangeErr, char* mcGroupAddr) {
-    return ST_IDLE_MEMBER;
+void f6(int sock, int exchangeErr, char* mcGroupAddr) {
+    printf("f6\n");
+    //return ST_IDLE_MEMBER;
 }
-enum states f7(int sock, int exchangeErr, char* mcGroupAddr) {
-    return ST_IDLE_MEMBER;
+void f7(int sock, int exchangeErr, char* mcGroupAddr) {
+    printf("f7\n");
+    //return ST_IDLE_MEMBER;
 }
 
 // Таблица переходов - выполняемых на переходах функций
-enum states (*func[ST_LAST][MES_LAST])() = {
+void (*func[ST_LAST][MES_LAST])() = {
     [ST_NON_MEMBER][MES_JOIN_GROUP] = f1,
     [ST_IDLE_MEMBER][MES_QUERY_RECEIVED] = f2,
     [ST_IDLE_MEMBER][MES_LEAVE_GROUP] = f3,
     [ST_DELAYING_MEMBER][MES_LEAVE_GROUP] = f4,
     [ST_DELAYING_MEMBER][MES_QUERY_RECEIVED] = f5,
     [ST_DELAYING_MEMBER][MES_REPORT_RECEIVED] = f6,
-    [ST_DELAYING_MEMBER][MES_TIMER_EXPIRED] = f7
+    [ST_DELAYING_MEMBER][MES_TIMER_EXPIRED] = f7,
+    [ST_NON_MEMBER][MES_NONE] = f0,
+    [ST_IDLE_MEMBER][MES_NONE] = f0,
+    [ST_DELAYING_MEMBER][MES_NONE] = f0
 };
 
 
 /*!
  * \brief Функция организации обмена по сети
  */
-int exchange(char* mcGroupAddr) {
+//int exchange(char* mcGroupAddr) {
+int exchange(ExchangeParameters* params) {
     int exchangeErr = 0;
     enum states state = ST_NON_MEMBER;
-
-    // IGMP пакет
-    IGMPPack mes;
-    //char mcGroupAddr[16] = "224.0.0.88";
-    mes.gAddr = inet_addr(mcGroupAddr);
+    //enum states state = ST_IDLE_MEMBER;
 
     // Локальный интерфейс
     struct sockaddr_in localFace;
     //memset(&localFace, 0, sizeof(localFace));
     //inet_aton("192.168.88.72", &localFace.sin_addr);
-    inet_aton("127.0.0.1", &localFace.sin_addr);
+    inet_aton(params->ifaceIP, &localFace.sin_addr);
     //localFace.sin_addr.s_addr = htonl(INADDR_ANY);
     localFace.sin_port = htons(3000);
     localFace.sin_family = AF_INET;
@@ -172,58 +220,118 @@ int exchange(char* mcGroupAddr) {
     //    этого сообщения с короткой задержкой [Unsolicited Report Interval].
     if (exchangeErr >= 0) {
         for (int i = 0; i < 3; i++) {
-            exchangeErr = membershipReport(mainSock, exchangeErr, mcGroupAddr);
+            exchangeErr = membershipReport(mainSock, exchangeErr, params->mcGroupAddr);
             if (i < 2) sleep(1);
         }
     }
 
     // Автомат состояний
     enum messages chng = MES_JOIN_GROUP;
+    int bufferSize = 10000;
+    char* buffer = (char*)malloc(bufferSize);
+    int mesSize;
     while ((g_workMode == 1) && (exchangeErr >= 0)) {
 
+        // Изменение состояния
+        func[state][chng](mainSock, exchangeErr, params->mcGroupAddr);
+        state = FSM_new_state[state][chng];
 
-        state = func[state][chng](mainSock, exchangeErr, mcGroupAddr);
+        // Сброс сигнала перехода
+        chng = MES_NONE;
+
+        // Чтение сокета
+        fd_set read_fds;
+        FD_ZERO(&read_fds);
+        FD_SET(mainSock, &read_fds);
+        // Таймаут на получение
+        struct timeval waitTime;
+        waitTime.tv_sec = 0;
+        waitTime.tv_usec = 500000;
+        int recvSize = select(mainSock + 1, &read_fds, NULL, NULL, &waitTime);
+        if (recvSize > 0) {
+            mesSize = recv(mainSock, buffer, bufferSize, 0);
+            // Проверить тип протокола и обработать, если IGMP
+            struct iphdr *ip = (struct iphdr*) buffer;
+            if (ip->protocol == IPPROTO_IGMP) {
+
+                // Отладочное сообщение
+                char* ipAddr1 = inet_ntoa(*(struct in_addr*) &ip->saddr);
+                char* ipAddr2 = inet_ntoa(*(struct in_addr*) &ip->daddr);
+                printf("Recieved IGMP packet from %s to %s lenght %d\n", ipAddr1, ipAddr2, mesSize);
+
+                // Парсинг сообщений
+                IGMPPack* mes = (IGMPPack*)(buffer + sizeof(struct iphdr));
+                printf("IGMP message code 0x%x\n", mes->type);
+
+                if (mes->type == 0x11) { chng = MES_QUERY_RECEIVED; }
+                if (mes->type == 0x16) { chng = MES_REPORT_RECEIVED; }
+            }
+        }
+
+        sleep(1);
     }
 
     //    Когда из группы выходит последний хост, который в ответ на Query передавал сообщение Membership Report для
     //    данной группы, этому хосту следует передать сообщение Leave Group по групповому адресу all-routers (224.0.0.2
     if (exchangeErr >= 0) {
-        //mes.compl = htonl(0x17000000);
         if (state != ST_NON_MEMBER) {
-            exchangeErr = leaveGroup(mainSock, exchangeErr, mcGroupAddr);
+            exchangeErr = leaveGroup(mainSock, exchangeErr, params->mcGroupAddr);
         }
     }
 
+    free(buffer);
     close(mainSock);
     return exchangeErr;
 }
+
+void sigStop(int sig) {
+    g_workMode = 0;
+}
+
+
 
 
 int main(int argc,char *argv[])
 {
     printf("Multicast checking\n");
 
+    signal(SIGINT, sigStop);
+
     // Обмен по сети выделяется в отдельный поток для того, чтобы обеспечить отклик
     // интерфейса пользователя
-    pthread_t thDesc;
-    char mcGroupAddr[16] = "224.0.0.88";
-    if (pthread_create(&thDesc, NULL, (void*)&exchange, &mcGroupAddr) == 0) {
+    int threadCounter = 0;
+    ExchangeParameters params[10];
+    strcpy(params[0].mcGroupAddr, "224.0.0.88");
+    strcpy(params[0].ifaceIP, "192.168.88.216");
+    ++threadCounter;
+    if (pthread_create(&(params[0].thDesc), NULL, (void*)&exchange, &params) == 0) {
         printf("Exchange started\n");
     }
 
-    //while (g_workMode == 1) {
+    // Цикл ввода команд пользователем
+    int commMaxSize = 10;
+    char comm[commMaxSize];
+    const char* commQuit = "q";
+    while (g_workMode == 1) {
+        //fgets(comm, commMaxSize, stdin);
+        //puts(comm);
 
+
+//    // По команде на добавление группы создаётся новый поток, описание в массиве params
 //    // Обмен по сети выделяется в отдельный поток для того, чтобы обеспечить отклик
 //    // интерфейса пользователя
+//    // Одна группа - один поток. 1. Групп не предполагается много 2. Так удобно 3. Отдельный обмен по каждой группе
 //    pthread_t thDesc;
 //    if (pthread_create(&thDesc, NULL, (void*)&exchange, NULL) == 0) {
 //        printf("Exchange started\n");
 //    }
 
-    // g_workMode = 0;
-    //}
 
-    pthread_join(thDesc, NULL);
+        //if (strcmp(comm, commQuit) == 0) sigStop(1); //else puts("wrong"); //g_workMode = 0;
+        sleep(1);
+    }
+
+    pthread_join(params[0].thDesc, NULL);
     return 0;
 }
 
