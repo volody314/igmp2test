@@ -4,15 +4,21 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
+#include <net/if.h>
 #include <arpa/inet.h>
+#include <sys/ioctl.h>
 #include <pthread.h>
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <getopt.h>
+
 #include <errno.h>
 
 #define ALL_SYSTEMS "224.0.0.1"
 #define ALL_ROUTERS "224.0.0.2"
+
+#define MAX_THREADS 10 // Максимальное количество групп / потоков
 
 // Пакет IGMP
 ;
@@ -26,15 +32,18 @@ typedef struct {
 #pragma pack (pop)
 
 
+//typedef struct {
+
+//} StatusFlags;
+
+
+// Передаваемые потоку обработки одной группы данные
 typedef struct {
-
-} StatusFlags;
-
-
-typedef struct {
-    pthread_t thDesc;
-    char mcGroupAddr[16];
-    char ifaceIP[16];
+    int No;                 // Порядковый номер потока
+    pthread_t thDesc;       // Дескриптор потока
+    char mcGroupAddr[16];   // Мультикаст группа
+    char ifaceName[16];     // Имя интерфейса
+    char ifaceIP[16];       // IP- адрес на интерфейсе
 } ExchangeParameters;
 
 
@@ -75,6 +84,7 @@ enum states FSM_new_state[ST_LAST][MES_LAST] = {
 };
 
 volatile int g_workMode = 1; // Состояние работы программы: 1-работать, 0-завершить
+volatile int g_stopFlags[MAX_THREADS];  // Флаги остановки конкретного потока при удалении группы
 
 // Передача пакета на заданный адрес
 int igmpSend(int sock, int err, char* ipAddr, IGMPPack* mes) {
@@ -138,7 +148,7 @@ int leaveGroup(int sock, int exchangeErr, char* mcGroupAddr) {
 
 // Функции перехода
 void f0(int sock, int exchangeErr, char* mcGroupAddr) {
-    printf("f0\n");
+    //printf("f0\n");
 }
 void f1(int sock, int exchangeErr, char* mcGroupAddr) {
     printf("f1\n");
@@ -191,6 +201,10 @@ void (*func[ST_LAST][MES_LAST])() = {
  */
 //int exchange(char* mcGroupAddr) {
 int exchange(ExchangeParameters* params) {
+    printf("Starting with iface %s ip %s group %s\n",
+           params->ifaceName,
+           params->ifaceIP,
+           params->mcGroupAddr);
     int exchangeErr = 0;
     enum states state = ST_NON_MEMBER;
     //enum states state = ST_IDLE_MEMBER;
@@ -227,10 +241,10 @@ int exchange(ExchangeParameters* params) {
 
     // Автомат состояний
     enum messages chng = MES_JOIN_GROUP;
-    int bufferSize = 10000;
+    int bufferSize = 1024;
     char* buffer = (char*)malloc(bufferSize);
     int mesSize;
-    while ((g_workMode == 1) && (exchangeErr >= 0)) {
+    while ((g_workMode == 1) && (g_stopFlags[params->No] == 1) && (exchangeErr >= 0)) {
 
         // Изменение состояния
         func[state][chng](mainSock, exchangeErr, params->mcGroupAddr);
@@ -246,7 +260,7 @@ int exchange(ExchangeParameters* params) {
         // Таймаут на получение
         struct timeval waitTime;
         waitTime.tv_sec = 0;
-        waitTime.tv_usec = 500000;
+        waitTime.tv_usec = 50000;
         int recvSize = select(mainSock + 1, &read_fds, NULL, NULL, &waitTime);
         if (recvSize > 0) {
             mesSize = recv(mainSock, buffer, bufferSize, 0);
@@ -268,7 +282,7 @@ int exchange(ExchangeParameters* params) {
             }
         }
 
-        sleep(1);
+        //sleep(1);
     }
 
     //    Когда из группы выходит последний хост, который в ответ на Query передавал сообщение Membership Report для
@@ -284,6 +298,26 @@ int exchange(ExchangeParameters* params) {
     return exchangeErr;
 }
 
+
+// Преобразование имени интерфейса в IP-адрес на нём
+int ifToIP(char* ip, char* name) {
+    int fd;
+    struct ifreq ifr;
+    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    /* I want to get an IPv4 IP address */
+    ifr.ifr_addr.sa_family = AF_INET;
+    strncpy(ifr.ifr_name, name, IFNAMSIZ-1);
+    ioctl(fd, SIOCGIFADDR, &ifr);
+    close(fd);
+    strcpy(ip, inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr));
+    printf("%s\n", inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr));
+    int errCode = 0;
+    // /sys/class/net/eno1
+    return errCode;
+}
+
+
+// Обработка сигнала остановки TERM
 void sigStop(int sig) {
     g_workMode = 0;
 }
@@ -295,24 +329,61 @@ int main(int argc,char *argv[])
 {
     printf("Multicast checking\n");
 
-    signal(SIGINT, sigStop);
+    int noErr = 1; //  Флаг отсутствия ошибок
+
+    signal(SIGINT, sigStop);    //  Вешаемся на сигнал остановки TERM
+
+    // Параметры, передаваемые в потоки
+    int threadCounter = 0;
+    ExchangeParameters params[MAX_THREADS];
+
+    for (int i = 0; i < MAX_THREADS; ++i) {
+        g_stopFlags[i] = 1; // Инициализация флагов остановки потоков
+        params[i].thDesc = 0;
+    }
+
+    // Наполнение первого потока сканирования
+    strcpy(params[0].mcGroupAddr, "224.0.0.88");
+    strcpy(params[0].ifaceName, "eno1");
+    strcpy(params[0].ifaceIP, "192.168.88.216");
+
+    // Разбор опций командной строки, настройка первого потока
+    //char iface[16];
+    int opchar = 0;
+    //int optindex = 0;
+    extern char* optarg;
+//    struct option opts[] = {
+//        {"iface", required_argument, &iface, 'i'},
+//        {"iface", required_argument, &iface, 'g'},
+//        {0, 0, 0, 0}
+//    };
+    while (-1 != (opchar = getopt(argc, argv, "i:g:"))) {
+        switch (opchar) {
+        case 'i':
+            strcpy(params[0].ifaceName, optarg);
+            if (ifToIP(params[0].ifaceIP, params[0].ifaceName) != 0) noErr = 0;
+            break;
+        case 'g':
+            strcpy(params[0].mcGroupAddr, optarg);
+            break;
+        }
+    }
+
 
     // Обмен по сети выделяется в отдельный поток для того, чтобы обеспечить отклик
     // интерфейса пользователя
-    int threadCounter = 0;
-    ExchangeParameters params[10];
-    strcpy(params[0].mcGroupAddr, "224.0.0.88");
-    strcpy(params[0].ifaceIP, "192.168.88.216");
-    ++threadCounter;
-    if (pthread_create(&(params[0].thDesc), NULL, (void*)&exchange, &params) == 0) {
-        printf("Exchange started\n");
+    if (noErr) {
+        params[0].No = threadCounter++;
+        if (pthread_create(&(params[0].thDesc), NULL, (void*)&exchange, &params) == 0) {
+            printf("Exchange started\n");
+        }
     }
 
     // Цикл ввода команд пользователем
     int commMaxSize = 10;
     char comm[commMaxSize];
     const char* commQuit = "q";
-    while (g_workMode == 1) {
+    while ((g_workMode == 1) && (noErr)) {
         //fgets(comm, commMaxSize, stdin);
         //puts(comm);
 
@@ -331,7 +402,10 @@ int main(int argc,char *argv[])
         sleep(1);
     }
 
-    pthread_join(params[0].thDesc, NULL);
+    //pthread_join(params[0].thDesc, NULL);
+    for (int i = 0; i < MAX_THREADS; ++i) {
+        if (params[i].thDesc != 0) pthread_join(params[i].thDesc, NULL);
+    }
     return 0;
 }
 
