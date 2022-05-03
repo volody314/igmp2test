@@ -300,7 +300,7 @@ int exchange(ExchangeParameters* params) {
 
 
 // Преобразование имени интерфейса в IP-адрес на нём
-int ifToIP(char* ip, char* name) {
+void ifToIP(char* ip, char* name) {
     int fd;
     struct ifreq ifr;
     fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -310,10 +310,7 @@ int ifToIP(char* ip, char* name) {
     ioctl(fd, SIOCGIFADDR, &ifr);
     close(fd);
     strcpy(ip, inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr));
-    printf("%s\n", inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr));
-    int errCode = 0;
-    // /sys/class/net/eno1
-    return errCode;
+    //printf("%s\n", inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr));
 }
 
 
@@ -361,7 +358,10 @@ int main(int argc,char *argv[])
         switch (opchar) {
         case 'i':
             strcpy(params[0].ifaceName, optarg);
-            if (ifToIP(params[0].ifaceIP, params[0].ifaceName) != 0) noErr = 0;
+            // Проверку корректности введённого интерфейса можно реализовать
+            // попыткой открыть такой файл в /sys/class/net/
+            //if (ifToIP(params[0].ifaceIP, params[0].ifaceName) != 0) noErr = 0;
+            ifToIP(params[0].ifaceIP, params[0].ifaceName);
             break;
         case 'g':
             strcpy(params[0].mcGroupAddr, optarg);
