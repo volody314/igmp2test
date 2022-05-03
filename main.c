@@ -19,7 +19,7 @@
 #define ALL_SYSTEMS "224.0.0.1"
 #define ALL_ROUTERS "224.0.0.2"
 
-#define TIMER_INTERAL_SECONDS 10    // Интервал Max Response Time
+#define TIMER_INTERVAL_SECONDS 10   // Интервал Max Response Time
 #define MAX_THREADS 10              // Максимальное количество групп / потоков
 
 // Пакет IGMP
@@ -126,24 +126,6 @@ int membershipReport(int sock, int exchangeErr, ExchangeParameters* params) {
 }
 
 
-////Вхождение в группу (join group), когда хост решил присоединиться к группе на данном интерфейсе. Это
-////событие может происходить только в состоянии Non-Member.
-//int joinGroup(int sock, int exchangeErr, ExchangeParameters* params) {
-//    IGMPPack mes;
-//    mes.type = 0x11;
-//    mes.maxTime = 0;
-//    mes.checksum = 0;
-//    mes.gAddr = inet_addr(params->mcGroupAddr);
-//    int err = igmpSend(sock, exchangeErr, ALL_SYSTEMS, &mes);
-//    //int err = igmpSend(sock, exchangeErr, mcGroupAddr, &mes);
-//    //9. Получатели сообщений
-//    //В таблице приведена классификация описанных в документе сообщений по группам адресатов.
-//    //Тип сообщенияГруппа адресатов
-//    //General QueryALL-SYSTEMS (224.0.0.1)
-//    //Group-Specific QueryГруппа, к которой относится запрос
-//    return err;
-//}
-
 //Выход из группы (leave group), когда хост решил покинуть группу на данном интерфейсе. Это событие может
 //происходить только в состоянии Delaying Member или Idle Member.
 int leaveGroup(int sock, int exchangeErr, ExchangeParameters* params) {
@@ -206,7 +188,7 @@ void f4(int sock, int exchangeErr, ExchangeParameters* params) {
 }
 void f5(int sock, int exchangeErr, ExchangeParameters* params) {
     printf("f5\n");
-    if (TIMER_INTERAL_SECONDS < (time(NULL) - params->timer)) { params->flag = 1; }
+    if (TIMER_INTERVAL_SECONDS < (time(NULL) - params->timer)) { params->flag = 1; }
     //return ST_DELAYING_MEMBER;
 }
 void f6(int sock, int exchangeErr, ExchangeParameters* params) {
@@ -328,7 +310,9 @@ int exchange(ExchangeParameters* params) {
         }
 
         // Генерация события по таймеру
-        if ((time(NULL) - params->timer) > TIMER_INTERAL_SECONDS) { chng = MES_TIMER_EXPIRED; }
+        if (state == ST_DELAYING_MEMBER) {
+            if ((time(NULL) - params->timer) > TIMER_INTERVAL_SECONDS) { chng = MES_TIMER_EXPIRED; }
+        }
 
         //sleep(1);
     }
