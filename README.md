@@ -28,6 +28,7 @@ igmp2test -i eno1 -g "224.0.0.100"
 + отправка запроса на вхождение в группу
 + отправка сообщения о покидании группы
 + приём и парсинг входящих IGMP2 пакетов
++ протокол со стороны хоста реализован в мере его осознания
 
 Из раздела "Пожелания к реализации" реализовано всё
 
@@ -35,7 +36,6 @@ igmp2test -i eno1 -g "224.0.0.100"
 ### TODO
 
 - не отлажены скрипты тестирования программы на Scapy (не оттестированы ответы программы)
-- ответные пакеты отправляются (если отправляются) без задержки
 - нет интерактивного добавления и удаления новых групп (архитектура программы подготовлена,
   сделать можно за час-два, но без решения проблемы тестирования введение данных функций бессмысленно)
 
@@ -58,110 +58,6 @@ igmp2test -i eno1 -g "224.0.0.100"
 - Wireshark видит пакеты, отправленные sr1, но не sendp
 
 
-[root@fedora igmp2test]# python3 igmp-report-send.py
-###[ IP ]###
-  version   = 4
-  ihl       = 5
-  tos       = 0x0
-  len       = 29
-  id        = 1
-  flags     =
-  frag      = 0
-  ttl       = 64
-  proto     = igmp
-  chksum    = 0x815c
-  src       = 192.168.88.216
-  dst       = 224.0.0.1
-  \options   \
-###[ Raw ]###
-     load      = '\x16\x00\x00\x00à\x00\x00c'
-
-Begin emission:
-Finished sending 1 packets.
-.....................^C
-Received 21 packets, got 0 answers, remaining 1 packets
-[root@fedora igmp2test]# python3 igmp-report-send.py
-###[ IP ]###
-  version   = 4
-  ihl       = 5
-  tos       = 0x0
-  len       = 29
-  id        = 1
-  flags     =
-  frag      = 0
-  ttl       = 64
-  proto     = igmp
-  chksum    = 0x815c
-  src       = 192.168.88.216
-  dst       = 224.0.0.1
-  \options   \
-###[ Raw ]###
-     load      = '\x16\x00\x00\x00à\x00\x00c'
-
-.
-Sent 1 packets.
-[root@fedora igmp2test]# python3 igmp-report-send.py
-###[ IP ]###
-  version   = 4
-  ihl       = 5
-  tos       = 0x0
-  len       = 29
-  id        = 1
-  flags     =
-  frag      = 0
-  ttl       = 64
-  proto     = igmp
-  chksum    = 0x815c
-  src       = 192.168.88.216
-  dst       = 224.0.0.1
-  \options   \
-###[ Raw ]###
-     load      = '\x16\x00\x00\x00à\x00\x00c'
-
-.
-Sent 1 packets.
-[root@fedora igmp2test]# python3 igmp-report-send.py
-###[ IP ]###
-  version   = 4
-  ihl       = 5
-  tos       = 0x0
-  len       = 29
-  id        = 1
-  flags     =
-  frag      = 0
-  ttl       = 64
-  proto     = igmp
-  chksum    = 0x815c
-  src       = 192.168.88.216
-  dst       = 224.0.0.1
-  \options   \
-###[ Raw ]###
-     load      = '\x16\x00\x00\x00à\x00\x00c'
-
-Begin emission:
-Finished sending 1 packets.
-...................^C
-Received 19 packets, got 0 answers, remaining 1 packets
-[root@fedora igmp2test]# python3 igmp-query-send.py
-###[ IP ]###
-  version   = 4
-  ihl       = 5
-  tos       = 0x0
-  len       = 29
-  id        = 1
-  flags     =
-  frag      = 0
-  ttl       = 64
-  proto     = igmp
-  chksum    = 0x815c
-  src       = 192.168.88.216
-  dst       = 224.0.0.1
-  \options   \
-###[ Raw ]###
-     load      = '\x11\x00\x00\x00à\x00\x00c'
-
-.
-Sent 1 packets.
 [root@fedora igmp2test]# python3 igmp-query-send.py
 ###[ IP ]###
   version   = 4
@@ -182,6 +78,28 @@ Sent 1 packets.
 
 Begin emission:
 Finished sending 1 packets.
-..^C
-Received 2 packets, got 0 answers, remaining 1 packets
-[root@fedora igmp2test]#
+.^C
+Received 1 packets, got 0 answers, remaining 1 packets
+[root@fedora igmp2test]# python3 igmp-report-send.py
+###[ IP ]###
+  version   = 4
+  ihl       = 5
+  tos       = 0x0
+  len       = 29
+  id        = 1
+  flags     =
+  frag      = 0
+  ttl       = 64
+  proto     = igmp
+  chksum    = 0x815c
+  src       = 192.168.88.216
+  dst       = 224.0.0.1
+  \options   \
+###[ Raw ]###
+     load      = '\x16\x00\x00\x00à\x00\x00c'
+
+Begin emission:
+Finished sending 1 packets.
+................................................^C
+Received 48 packets, got 0 answers, remaining 1 packets
+

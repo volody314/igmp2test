@@ -12,13 +12,15 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <time.h>
 
 #include <errno.h>
 
 #define ALL_SYSTEMS "224.0.0.1"
 #define ALL_ROUTERS "224.0.0.2"
 
-#define MAX_THREADS 10 // Максимальное количество групп / потоков
+#define TIMER_INTERAL_SECONDS 10    // Интервал Max Response Time
+#define MAX_THREADS 10              // Максимальное количество групп / потоков
 
 // Пакет IGMP
 ;
@@ -40,12 +42,13 @@ typedef struct {
 // Передаваемые потоку обработки одной группы данные
 typedef struct {
     int No;                 // Порядковый номер потока
+    int flag;               // Флаг из протокола
+    time_t timer;           // Таймер протокола
     pthread_t thDesc;       // Дескриптор потока
     char mcGroupAddr[16];   // Мультикаст группа
     char ifaceName[16];     // Имя интерфейса
     char ifaceIP[16];       // IP- адрес на интерфейсе
 } ExchangeParameters;
-
 
 
 // Состояния
@@ -71,20 +74,31 @@ enum messages
 
 // Таблица переходов (смены состояний)
 enum states FSM_new_state[ST_LAST][MES_LAST] = {
+    [ST_NON_MEMBER][MES_NONE] = ST_NON_MEMBER,
+    [ST_NON_MEMBER][MES_LEAVE_GROUP] = ST_NON_MEMBER,
     [ST_NON_MEMBER][MES_JOIN_GROUP] = ST_DELAYING_MEMBER,
-    [ST_IDLE_MEMBER][MES_QUERY_RECEIVED] = ST_DELAYING_MEMBER,
+    [ST_NON_MEMBER][MES_QUERY_RECEIVED] = ST_NON_MEMBER,
+    [ST_NON_MEMBER][MES_REPORT_RECEIVED] = ST_NON_MEMBER,
+    [ST_NON_MEMBER][MES_TIMER_EXPIRED] = ST_NON_MEMBER,
+
+    [ST_IDLE_MEMBER][MES_NONE] = ST_IDLE_MEMBER,
     [ST_IDLE_MEMBER][MES_LEAVE_GROUP] = ST_NON_MEMBER,
+    [ST_IDLE_MEMBER][MES_JOIN_GROUP] = ST_IDLE_MEMBER,
+    [ST_IDLE_MEMBER][MES_QUERY_RECEIVED] = ST_DELAYING_MEMBER,
+    [ST_IDLE_MEMBER][MES_REPORT_RECEIVED] = ST_IDLE_MEMBER,
+    [ST_IDLE_MEMBER][MES_TIMER_EXPIRED] = ST_IDLE_MEMBER,
+
+    [ST_DELAYING_MEMBER][MES_NONE] = ST_DELAYING_MEMBER,
     [ST_DELAYING_MEMBER][MES_LEAVE_GROUP] = ST_NON_MEMBER,
+    [ST_DELAYING_MEMBER][MES_JOIN_GROUP] = ST_DELAYING_MEMBER,
     [ST_DELAYING_MEMBER][MES_QUERY_RECEIVED] = ST_DELAYING_MEMBER,
     [ST_DELAYING_MEMBER][MES_REPORT_RECEIVED] = ST_IDLE_MEMBER,
-    [ST_DELAYING_MEMBER][MES_TIMER_EXPIRED] = ST_IDLE_MEMBER,
-    [ST_NON_MEMBER][MES_NONE] = ST_NON_MEMBER,
-    [ST_IDLE_MEMBER][MES_NONE] = ST_IDLE_MEMBER,
-    [ST_DELAYING_MEMBER][MES_NONE] = ST_DELAYING_MEMBER
+    [ST_DELAYING_MEMBER][MES_TIMER_EXPIRED] = ST_IDLE_MEMBER
 };
 
-volatile int g_workMode = 1; // Состояние работы программы: 1-работать, 0-завершить
+volatile int g_workMode = 1;            // Состояние работы программы: 1-работать, 0-завершить
 volatile int g_stopFlags[MAX_THREADS];  // Флаги остановки конкретного потока при удалении группы
+//time_t g_timer[MAX_THREADS];            // Таймеры
 
 // Передача пакета на заданный адрес
 int igmpSend(int sock, int err, char* ipAddr, IGMPPack* mes) {
@@ -98,101 +112,138 @@ int igmpSend(int sock, int err, char* ipAddr, IGMPPack* mes) {
 }
 
 // Отправка пакета membershipReport
-int membershipReport(int sock, int exchangeErr, char* mcGroupAddr) {
+int membershipReport(int sock, int exchangeErr, ExchangeParameters* params) {
     IGMPPack mes;
     mes.type = 0x16;
     mes.maxTime = 0;
     mes.checksum = 0;
-    mes.gAddr = inet_addr(mcGroupAddr);
-    return igmpSend(sock, exchangeErr, ALL_SYSTEMS, &mes);
-    //return igmpSend(sock, exchangeErr, "192.168.88.1", &mes);
+    mes.gAddr = inet_addr(params->mcGroupAddr);
+    return igmpSend(sock, exchangeErr, params->mcGroupAddr, &mes);
+    //9. Получатели сообщений
+    //В таблице приведена классификация описанных в документе сообщений по группам адресатов.
+    //Тип сообщенияГруппа адресатов
+    //Membership ReportГруппа, к которой относится запрос
 }
 
 
-//Вхождение в группу (join group), когда хост решил присоединиться к группе на данном интерфейсе. Это
-//событие может происходить только в состоянии Non-Member.
-int joinGroup(int sock, int exchangeErr, char* mcGroupAddr) {
-    IGMPPack mes;
-    mes.type = 0x11;
-    mes.maxTime = 0;
-    mes.checksum = 0;
-    mes.gAddr = inet_addr(mcGroupAddr);
-    int err = igmpSend(sock, exchangeErr, ALL_SYSTEMS, &mes);
-    //int err = igmpSend(sock, exchangeErr, "192.168.88.1", &mes);
-
-//    //    Когда хост присоединяется к группе, ему следует незамедлительно передать сообщение Version 2 Membership Report
-//    //    для этой группы, если данный хост является первым членом этой группы в своей сети. Учитывая возможность потери
-//    //    или повреждения начального сообщения Membership Report рекомендуется передать 1 или 2 дополнительных копии
-//    //    этого сообщения с короткой задержкой [Unsolicited Report Interval].
-//    if (exchangeErr >= 0) {
-//        for (int i = 0; i < 3; i++) {
-//            err = membershipReport(sock, exchangeErr, mcGroupAddr);
-//            if (i < 2) sleep(1);
-//        }
-//    }
-
-    return err;
-}
+////Вхождение в группу (join group), когда хост решил присоединиться к группе на данном интерфейсе. Это
+////событие может происходить только в состоянии Non-Member.
+//int joinGroup(int sock, int exchangeErr, ExchangeParameters* params) {
+//    IGMPPack mes;
+//    mes.type = 0x11;
+//    mes.maxTime = 0;
+//    mes.checksum = 0;
+//    mes.gAddr = inet_addr(params->mcGroupAddr);
+//    int err = igmpSend(sock, exchangeErr, ALL_SYSTEMS, &mes);
+//    //int err = igmpSend(sock, exchangeErr, mcGroupAddr, &mes);
+//    //9. Получатели сообщений
+//    //В таблице приведена классификация описанных в документе сообщений по группам адресатов.
+//    //Тип сообщенияГруппа адресатов
+//    //General QueryALL-SYSTEMS (224.0.0.1)
+//    //Group-Specific QueryГруппа, к которой относится запрос
+//    return err;
+//}
 
 //Выход из группы (leave group), когда хост решил покинуть группу на данном интерфейсе. Это событие может
 //происходить только в состоянии Delaying Member или Idle Member.
-int leaveGroup(int sock, int exchangeErr, char* mcGroupAddr) {
+int leaveGroup(int sock, int exchangeErr, ExchangeParameters* params) {
     IGMPPack mes;
     mes.type = 0x17;
     mes.maxTime = 0;
     mes.checksum = 0;
-    mes.gAddr = inet_addr(mcGroupAddr);
+    mes.gAddr = inet_addr(params->mcGroupAddr);
     return igmpSend(sock, exchangeErr, ALL_ROUTERS, &mes);
+    //9. Получатели сообщений
+    //В таблице приведена классификация описанных в документе сообщений по группам адресатов.
+    //Тип сообщенияГруппа адресатов
+    //Leave MessageALL-ROUTERS (224.0.0.2)
+
+    //Когда из группы выходит последний хост, который в ответ на Query передавал сообщение Membership Report для
+    //данной группы, этому хосту следует передать сообщение Leave Group по групповому адресу all-routers (224.0.0.2).
+    //Если выходящий из группы хост не является последним, кто отвечал на Query, этот хост может не передавать никакого
+    //сообщения, поскольку в группе остаются другие хосты.
 }
 
 
 // Функции перехода
-void f0(int sock, int exchangeErr, char* mcGroupAddr) {
+void f0(int sock, int exchangeErr, ExchangeParameters* params) {
     //printf("f0\n");
 }
-void f1(int sock, int exchangeErr, char* mcGroupAddr) {
+void f1(int sock, int exchangeErr, ExchangeParameters* params) {
     printf("f1\n");
-    joinGroup(sock, exchangeErr, mcGroupAddr);
+    //joinGroup(sock, exchangeErr, params);
+    //    Когда хост присоединяется к группе, ему следует незамедлительно передать сообщение Version 2 Membership Report
+    //    для этой группы, если данный хост является первым членом этой группы в своей сети. Учитывая возможность потери
+    //    или повреждения начального сообщения Membership Report рекомендуется передать 1 или 2 дополнительных копии
+    //    этого сообщения с короткой задержкой [Unsolicited Report Interval].
+    if (exchangeErr >= 0) {
+        for (int i = 0; i < 3; i++) {
+            //exchangeErr = membershipReport(sock, exchangeErr, params);
+            membershipReport(sock, exchangeErr, params);
+            // TODO  Возвращать ошибку обмена
+            if (i < 2) sleep(1);
+        }
+    }
+    params->flag = 1;
+    params->timer = time(NULL);             // Старт таймера
     //return ST_DELAYING_MEMBER;
 }
-void f2(int sock, int exchangeErr, char* mcGroupAddr) {
+void f2(int sock, int exchangeErr, ExchangeParameters* params) {
     printf("f2\n");
+    params->timer = time(NULL);  // Старт таймера
     //return ST_DELAYING_MEMBER;
 }
-void f3(int sock, int exchangeErr, char* mcGroupAddr) {
+void f3(int sock, int exchangeErr, ExchangeParameters* params) {
+    // Фактически не срабатывает, выход по ctrl+C
     printf("f3\n");
-    leaveGroup(sock, exchangeErr, mcGroupAddr);
+    leaveGroup(sock, exchangeErr, params);
     //return ST_NON_MEMBER;
 }
-void f4(int sock, int exchangeErr, char* mcGroupAddr) {
+void f4(int sock, int exchangeErr, ExchangeParameters* params) {
+    // Фактически не срабатывает, выход по ctrl+C
     printf("f4\n");
     //return ST_NON_MEMBER;
 }
-void f5(int sock, int exchangeErr, char* mcGroupAddr) {
+void f5(int sock, int exchangeErr, ExchangeParameters* params) {
     printf("f5\n");
+    if (TIMER_INTERAL_SECONDS < (time(NULL) - params->timer)) { params->flag = 1; }
     //return ST_DELAYING_MEMBER;
 }
-void f6(int sock, int exchangeErr, char* mcGroupAddr) {
+void f6(int sock, int exchangeErr, ExchangeParameters* params) {
     printf("f6\n");
+    params->flag = 0;
     //return ST_IDLE_MEMBER;
 }
-void f7(int sock, int exchangeErr, char* mcGroupAddr) {
-    printf("f7\n");
+void f7(int sock, int exchangeErr, ExchangeParameters* params) {
+    printf("f7 - switching idle member\n");
+    membershipReport(sock, exchangeErr, params);
+    params->flag = 1;
+    // TODO  Возвращать ошибку обмена
     //return ST_IDLE_MEMBER;
 }
 
 // Таблица переходов - выполняемых на переходах функций
 void (*func[ST_LAST][MES_LAST])() = {
-    [ST_NON_MEMBER][MES_JOIN_GROUP] = f1,
-    [ST_IDLE_MEMBER][MES_QUERY_RECEIVED] = f2,
-    [ST_IDLE_MEMBER][MES_LEAVE_GROUP] = f3,
-    [ST_DELAYING_MEMBER][MES_LEAVE_GROUP] = f4,
-    [ST_DELAYING_MEMBER][MES_QUERY_RECEIVED] = f5,
-    [ST_DELAYING_MEMBER][MES_REPORT_RECEIVED] = f6,
-    [ST_DELAYING_MEMBER][MES_TIMER_EXPIRED] = f7,
-    [ST_NON_MEMBER][MES_NONE] = f0,
-    [ST_IDLE_MEMBER][MES_NONE] = f0,
-    [ST_DELAYING_MEMBER][MES_NONE] = f0
+        [ST_NON_MEMBER][MES_NONE]               = f0,
+        [ST_NON_MEMBER][MES_LEAVE_GROUP]        = f0,
+        [ST_NON_MEMBER][MES_JOIN_GROUP]         = f1,
+        [ST_NON_MEMBER][MES_QUERY_RECEIVED]     = f0,
+        [ST_NON_MEMBER][MES_REPORT_RECEIVED]    = f0,
+        [ST_NON_MEMBER][MES_TIMER_EXPIRED]      = f0,
+
+        [ST_IDLE_MEMBER][MES_NONE]              = f0,
+        [ST_IDLE_MEMBER][MES_LEAVE_GROUP]       = f3,   // Фактически не срабатывает, выход по ctrl+C
+        [ST_IDLE_MEMBER][MES_JOIN_GROUP]        = f0,
+        [ST_IDLE_MEMBER][MES_QUERY_RECEIVED]    = f2,
+        [ST_IDLE_MEMBER][MES_REPORT_RECEIVED]   = f0,
+        [ST_IDLE_MEMBER][MES_TIMER_EXPIRED]     = f0,
+
+        [ST_DELAYING_MEMBER][MES_NONE]          = f0,
+        [ST_DELAYING_MEMBER][MES_LEAVE_GROUP]   = f4,   // Фактически не срабатывает, выход по ctrl+C
+        [ST_DELAYING_MEMBER][MES_JOIN_GROUP]    = f0,
+        [ST_DELAYING_MEMBER][MES_QUERY_RECEIVED] = f5,
+        [ST_DELAYING_MEMBER][MES_REPORT_RECEIVED] = f6,
+        [ST_DELAYING_MEMBER][MES_TIMER_EXPIRED] = f7
 };
 
 
@@ -208,6 +259,8 @@ int exchange(ExchangeParameters* params) {
     int exchangeErr = 0;
     enum states state = ST_NON_MEMBER;
     //enum states state = ST_IDLE_MEMBER;
+    params->timer = time(NULL);
+    params->flag = 0;
 
     // Локальный интерфейс
     struct sockaddr_in localFace;
@@ -228,26 +281,17 @@ int exchange(ExchangeParameters* params) {
     if (exchangeErr >= 0)
         exchangeErr = bind(mainSock, (struct sockaddr*) &localFace, sizeof(localFace));
 
-    //    Когда хост присоединяется к группе, ему следует незамедлительно передать сообщение Version 2 Membership Report
-    //    для этой группы, если данный хост является первым членом этой группы в своей сети. Учитывая возможность потери
-    //    или повреждения начального сообщения Membership Report рекомендуется передать 1 или 2 дополнительных копии
-    //    этого сообщения с короткой задержкой [Unsolicited Report Interval].
-    if (exchangeErr >= 0) {
-        for (int i = 0; i < 3; i++) {
-            exchangeErr = membershipReport(mainSock, exchangeErr, params->mcGroupAddr);
-            if (i < 2) sleep(1);
-        }
-    }
+
 
     // Автомат состояний
-    enum messages chng = MES_JOIN_GROUP;
+    enum messages chng = MES_JOIN_GROUP;    // Хост решил присоединиться к группе
     int bufferSize = 1024;
     char* buffer = (char*)malloc(bufferSize);
     int mesSize;
     while ((g_workMode == 1) && (g_stopFlags[params->No] == 1) && (exchangeErr >= 0)) {
 
         // Изменение состояния
-        func[state][chng](mainSock, exchangeErr, params->mcGroupAddr);
+        func[state][chng](mainSock, exchangeErr, params);
         state = FSM_new_state[state][chng];
 
         // Сброс сигнала перехода
@@ -277,19 +321,24 @@ int exchange(ExchangeParameters* params) {
                 IGMPPack* mes = (IGMPPack*)(buffer + sizeof(struct iphdr));
                 printf("IGMP message code 0x%x\n", mes->type);
 
+                // Генерация событий по пришедшим пакетам
                 if (mes->type == 0x11) { chng = MES_QUERY_RECEIVED; }
                 if (mes->type == 0x16) { chng = MES_REPORT_RECEIVED; }
             }
         }
+
+        // Генерация события по таймеру
+        if ((time(NULL) - params->timer) > TIMER_INTERAL_SECONDS) { chng = MES_TIMER_EXPIRED; }
 
         //sleep(1);
     }
 
     //    Когда из группы выходит последний хост, который в ответ на Query передавал сообщение Membership Report для
     //    данной группы, этому хосту следует передать сообщение Leave Group по групповому адресу all-routers (224.0.0.2
+    // Функция f3
     if (exchangeErr >= 0) {
         if (state != ST_NON_MEMBER) {
-            exchangeErr = leaveGroup(mainSock, exchangeErr, params->mcGroupAddr);
+            exchangeErr = leaveGroup(mainSock, exchangeErr, params);
         }
     }
 
