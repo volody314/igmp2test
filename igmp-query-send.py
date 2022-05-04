@@ -1,10 +1,5 @@
-#!python3
-import scapy.all as scapy
-
-pack = (scapy.IP(dst="192.168.88.216",src="192.168.88.1",proto=2)/'\x11\x00\x00\x00\xE0\x00\x00\x63')
-del pack[scapy.IP].chksum
-pack.show2()
-scapy.sr1(pack)
-
-
-#scapy.Ether()/
+from scapy.all import *
+import scapy.contrib.igmp
+p = IP(dst="192.168.88.216",src="192.168.88.1")/scapy.contrib.igmp.IGMP(gaddr='233.3.2.1')
+p[scapy.contrib.igmp.IGMP].igmpize()
+send(p)
