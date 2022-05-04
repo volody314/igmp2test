@@ -1,0 +1,56 @@
+[root@fedora build-igmp2test-Desktop_Qt_6_2_3_GCC_64bit-Release]# ./igmp2test -i eno1 -g "224.0.0.99"
+Multicast checking
+Exchange started
+Starting with iface eno1 ip 192.168.88.216 group 224.0.0.99
+Socket #3 opened
+f1
+f7 - switching idle member
+^C[root@fedora build-igmp2test-Desktop_Qt_6_2_3_GCC_64bit-Release]# ./igmp2test -i eno1 -g "224.0.0.99"
+Multicast checking
+Exchange started
+Starting with iface eno1 ip 192.168.88.216 group 224.0.0.99
+Socket #3 opened
+f1
+f7 - switching idle member
+Recieved IGMP packet from 192.168.88.216 to 192.168.88.216 lenght 29
+IGMP message code 0x11
+f2
+f7 - switching idle member
+Recieved IGMP packet from 192.168.88.216 to 192.168.88.216 lenght 29
+IGMP message code 0x11
+f2
+f7 - switching idle member
+Recieved IGMP packet from 192.168.88.216 to 192.168.88.216 lenght 29
+IGMP message code 0x11
+f2
+Recieved IGMP packet from 192.168.88.216 to 192.168.88.216 lenght 29
+IGMP message code 0x11
+f5
+f7 - switching idle member
+Recieved IGMP packet from 192.168.88.216 to 192.168.88.216 lenght 29
+IGMP message code 0x11
+f2
+f7 - switching idle member
+Recieved IGMP packet from 192.168.88.216 to 192.168.88.216 lenght 29
+IGMP message code 0x16
+Recieved IGMP packet from 192.168.88.216 to 192.168.88.216 lenght 29
+IGMP message code 0x11
+f2
+f7 - switching idle member
+Recieved IGMP packet from 192.168.88.216 to 192.168.88.216 lenght 29
+IGMP message code 0x16
+Recieved IGMP packet from 192.168.88.216 to 192.168.88.216 lenght 29
+IGMP message code 0x11
+f2
+Recieved IGMP packet from 192.168.88.216 to 192.168.88.216 lenght 29
+IGMP message code 0x16
+f6
+Recieved IGMP packet from 192.168.88.216 to 192.168.88.216 lenght 29
+IGMP message code 0x11
+f2
+f7 - switching idle member
+Recieved IGMP packet from 192.168.88.216 to 192.168.88.216 lenght 29
+IGMP message code 0x11
+f2
+f7 - switching idle member
+^C[root@fedora build-igmp2test-Desktop_Qt_6_2_3_GCC_64bit-Release]# 

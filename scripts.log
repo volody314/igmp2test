@@ -1,0 +1,287 @@
+[root@fedora igmp2test]# python3 igmp-query-send.py 
+###[ IP ]### 
+  version   = 4
+  ihl       = 5
+  tos       = 0x0
+  len       = 29
+  id        = 1
+  flags     = 
+  frag      = 0
+  ttl       = 64
+  proto     = igmp
+  chksum    = 0x9fb4
+  src       = 192.168.88.1
+  dst       = 192.168.1.216
+  \options   \
+###[ Raw ]### 
+     load      = '\x11\x00\x00\x00à\x00\x00c'
+
+Begin emission:
+Finished sending 1 packets.
+.............^C
+Received 13 packets, got 0 answers, remaining 1 packets
+[root@fedora igmp2test]# python3 igmp-query-send.py 
+###[ IP ]### 
+  version   = 4
+  ihl       = 5
+  tos       = 0x0
+  len       = 29
+  id        = 1
+  flags     = 
+  frag      = 0
+  ttl       = 64
+  proto     = igmp
+  chksum    = 0x48b4
+  src       = 192.168.88.1
+  dst       = 192.168.88.216
+  \options   \
+###[ Raw ]### 
+     load      = '\x11\x00\x00\x00à\x00\x00c'
+
+Begin emission:
+Finished sending 1 packets.
+.....^C
+Received 5 packets, got 0 answers, remaining 1 packets
+[root@fedora igmp2test]# python3 igmp-query-send.py 
+###[ IP ]### 
+  version   = 4
+  ihl       = 5
+  tos       = 0x0
+  len       = 29
+  id        = 1
+  flags     = 
+  frag      = 0
+  ttl       = 64
+  proto     = igmp
+  chksum    = 0x48b4
+  src       = 192.168.88.1
+  dst       = 192.168.88.216
+  \options   \
+###[ Raw ]### 
+     load      = '\x11\x00\x00\x00à\x00\x00c'
+
+Begin emission:
+Finished sending 1 packets.
+.^C
+Received 1 packets, got 0 answers, remaining 1 packets
+[root@fedora igmp2test]# python3 igmp-query-send.py 
+###[ IP ]### 
+  version   = 4
+  ihl       = 5
+  tos       = 0x0
+  len       = 29
+  id        = 1
+  flags     = 
+  frag      = 0
+  ttl       = 64
+  proto     = igmp
+  chksum    = 0x48b4
+  src       = 192.168.88.1
+  dst       = 192.168.88.216
+  \options   \
+###[ Raw ]### 
+     load      = '\x11\x00\x00\x00à\x00\x00c'
+
+Begin emission:
+Finished sending 1 packets.
+.^C
+Received 1 packets, got 0 answers, remaining 1 packets
+[root@fedora igmp2test]# python3 igmp-query-send.py 
+###[ IP ]### 
+  version   = 4
+  ihl       = 5
+  tos       = 0x0
+  len       = 29
+  id        = 1
+  flags     = 
+  frag      = 0
+  ttl       = 64
+  proto     = igmp
+  chksum    = 0x48b4
+  src       = 192.168.88.1
+  dst       = 192.168.88.216
+  \options   \
+###[ Raw ]### 
+     load      = '\x11\x00\x00\x00à\x00\x00c'
+
+Begin emission:
+Finished sending 1 packets.
+.^C
+Received 1 packets, got 0 answers, remaining 1 packets
+[root@fedora igmp2test]# python3 igmp-query-send.py 
+###[ IP ]### 
+  version   = 4
+  ihl       = 5
+  tos       = 0x0
+  len       = 29
+  id        = 1
+  flags     = 
+  frag      = 0
+  ttl       = 64
+  proto     = igmp
+  chksum    = 0x48b4
+  src       = 192.168.88.1
+  dst       = 192.168.88.216
+  \options   \
+###[ Raw ]### 
+     load      = '\x11\x00\x00\x00à\x00\x00c'
+
+Begin emission:
+Finished sending 1 packets.
+.........^C
+Received 9 packets, got 0 answers, remaining 1 packets
+[root@fedora igmp2test]# python3 igmp-report-send.py 
+###[ IP ]### 
+  version   = 4
+  ihl       = 5
+  tos       = 0x0
+  len       = 29
+  id        = 1
+  flags     = 
+  frag      = 0
+  ttl       = 64
+  proto     = igmp
+  chksum    = 0x48b4
+  src       = 192.168.88.1
+  dst       = 192.168.88.216
+  \options   \
+###[ Raw ]### 
+     load      = '\x16\x00\x00\x00à\x00\x00c'
+
+Begin emission:
+Finished sending 1 packets.
+..^C
+Received 2 packets, got 0 answers, remaining 1 packets
+[root@fedora igmp2test]# python3 igmp-query-send.py 
+###[ IP ]### 
+  version   = 4
+  ihl       = 5
+  tos       = 0x0
+  len       = 29
+  id        = 1
+  flags     = 
+  frag      = 0
+  ttl       = 64
+  proto     = igmp
+  chksum    = 0x48b4
+  src       = 192.168.88.1
+  dst       = 192.168.88.216
+  \options   \
+###[ Raw ]### 
+     load      = '\x11\x00\x00\x00à\x00\x00c'
+
+Begin emission:
+Finished sending 1 packets.
+.^C
+Received 1 packets, got 0 answers, remaining 1 packets
+[root@fedora igmp2test]# python3 igmp-report-send.py 
+###[ IP ]### 
+  version   = 4
+  ihl       = 5
+  tos       = 0x0
+  len       = 29
+  id        = 1
+  flags     = 
+  frag      = 0
+  ttl       = 64
+  proto     = igmp
+  chksum    = 0x48b4
+  src       = 192.168.88.1
+  dst       = 192.168.88.216
+  \options   \
+###[ Raw ]### 
+     load      = '\x16\x00\x00\x00à\x00\x00c'
+
+Begin emission:
+Finished sending 1 packets.
+.^C
+Received 1 packets, got 0 answers, remaining 1 packets
+[root@fedora igmp2test]# python3 igmp-query-send.py 
+###[ IP ]### 
+  version   = 4
+  ihl       = 5
+  tos       = 0x0
+  len       = 29
+  id        = 1
+  flags     = 
+  frag      = 0
+  ttl       = 64
+  proto     = igmp
+  chksum    = 0x48b4
+  src       = 192.168.88.1
+  dst       = 192.168.88.216
+  \options   \
+###[ Raw ]### 
+     load      = '\x11\x00\x00\x00à\x00\x00c'
+
+Begin emission:
+Finished sending 1 packets.
+.^[[A^[[A^C
+Received 1 packets, got 0 answers, remaining 1 packets
+[root@fedora igmp2test]# python3 igmp-report-send.py 
+###[ IP ]### 
+  version   = 4
+  ihl       = 5
+  tos       = 0x0
+  len       = 29
+  id        = 1
+  flags     = 
+  frag      = 0
+  ttl       = 64
+  proto     = igmp
+  chksum    = 0x48b4
+  src       = 192.168.88.1
+  dst       = 192.168.88.216
+  \options   \
+###[ Raw ]### 
+     load      = '\x16\x00\x00\x00à\x00\x00c'
+
+Begin emission:
+Finished sending 1 packets.
+.^C
+Received 1 packets, got 0 answers, remaining 1 packets
+[root@fedora igmp2test]# python3 igmp-query-send.py 
+###[ IP ]### 
+  version   = 4
+  ihl       = 5
+  tos       = 0x0
+  len       = 29
+  id        = 1
+  flags     = 
+  frag      = 0
+  ttl       = 64
+  proto     = igmp
+  chksum    = 0x48b4
+  src       = 192.168.88.1
+  dst       = 192.168.88.216
+  \options   \
+###[ Raw ]### 
+     load      = '\x11\x00\x00\x00à\x00\x00c'
+
+Begin emission:
+Finished sending 1 packets.
+.........^C
+Received 9 packets, got 0 answers, remaining 1 packets
+[root@fedora igmp2test]# python3 igmp-query-send.py 
+###[ IP ]### 
+  version   = 4
+  ihl       = 5
+  tos       = 0x0
+  len       = 29
+  id        = 1
+  flags     = 
+  frag      = 0
+  ttl       = 64
+  proto     = igmp
+  chksum    = 0x48b4
+  src       = 192.168.88.1
+  dst       = 192.168.88.216
+  \options   \
+###[ Raw ]### 
+     load      = '\x11\x00\x00\x00à\x00\x00c'
+
+Begin emission:
+Finished sending 1 packets.
+.^C
+Received 1 packets, got 0 answers, remaining 1 packets
+[root@fedora igmp2test]# 
